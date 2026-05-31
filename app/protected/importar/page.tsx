@@ -50,7 +50,7 @@ export default function ImportarPage() {
             <Button
               onClick={handleSubmit}
               disabled={!file || status === "loading"}
-              className="w-full bg-darkBlue hover:bg-darkBlue/90 text-white rounded-lg h-10"
+              className="w-full bg-darkBlue! hover:bg-darkBlue/90! text-brand-darkBlue! rounded-lg h-10"
             >
               {status === "loading" ? (
                 <span className="flex items-center gap-2">

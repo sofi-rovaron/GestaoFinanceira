@@ -52,7 +52,6 @@ export default function ExtratosPage() {
     .filter((e) => e.tipo === "pagamento")
     .reduce((acc, e) => acc + e.valor, 0);
 
-  // ── Edição ──
   const iniciarEdicao = (e: Extrato) => {
     setEditandoId(e.id);
     setEditForm({ ...e });
@@ -70,13 +69,11 @@ export default function ExtratosPage() {
     setEditForm({});
   };
 
-  // ── Exclusão ──
   const handleDeletar = async (id: string) => {
     await deletarExtrato(id);
     setConfirmDeleteId(null);
   };
 
-  // ── Adicionar ──
   const handleAdicionar = async () => {
     await adicionarExtrato(novoForm);
     setMostrandoForm(false);
