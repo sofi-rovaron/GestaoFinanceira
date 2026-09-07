@@ -77,7 +77,7 @@ export function ExtratoForm({
             min="0"
             step="0.01"
             value={form.valor ?? ""}
-            onChange={(e) => set("valor", e.target.value === "" ? undefined : parseFloat(e.target.value))}
+            onChange={(e) => set("valor", e.target.value === "" ? "" : parseFloat(e.target.value))}
             className="text-sm w-28 border-gray-200 bg-gray-50 focus:border-[#021A49]"
           />
         </div>
