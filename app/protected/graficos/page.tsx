@@ -1,13 +1,7 @@
 "use client";
 
-import React from "react";
-import {
-  TrendingUp,
-  Wallet,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  FileUp,
-} from "lucide-react";
+import { useMemo } from "react";
+import { FileUp } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -22,266 +16,311 @@ import {
   Cell,
 } from "recharts";
 
-// Dados Fictícios (Mock)
-const lineData = [
-  { name: "Out", receitas: 12000, despesas: 11000 },
-  { name: "Nov", receitas: 15000, despesas: 14000 },
-  { name: "Dez", receitas: 11500, despesas: 10500 },
-  { name: "Jan", receitas: 18500, despesas: 17500 },
-  { name: "Fev", receitas: 16000, despesas: 15000 },
-  { name: "Mar", receitas: 21000, despesas: 19000 },
-  { name: "Abr", receitas: 22000, despesas: 20500 },
+import { useExtratos, formatarValor } from "@/lib/use-extract";
+import { ResumoCards } from "@/components/card/resume-extract-card";
+import type { Extrato } from "@/lib/use-extract";
+
+// Paleta fixa para as fatias do gráfico de categorias
+const CORES_CATEGORIA = [
+  "#3b82f6",
+  "#ef4444",
+  "#10b981",
+  "#06b6d4",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#84cc16",
 ];
 
-const pieData = [
-  { name: "Moradia", value: 30, color: "#3b82f6" },
-  { name: "Alimentação", value: 21, color: "#ef4444" },
-  { name: "Saúde", value: 15, color: "#10b981" },
-  { name: "Educação", value: 12, color: "#06b6d4" },
-  { name: "Transporte", value: 12, color: "#f59e0b" },
-  { name: "Lazer", value: 10, color: "#8b5cf6" },
+const MESES_ABREV = [
+  "Jan",
+  "Fev",
+  "Mar",
+  "Abr",
+  "Mai",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Set",
+  "Out",
+  "Nov",
+  "Dez",
 ];
 
-const transactions = [
-  {
-    id: 1,
-    desc: "Salário",
-    cat: "Renda",
-    data: "10/04/2026",
-    valor: 8500,
-    tipo: "entrada",
-  },
-  {
-    id: 2,
-    desc: "Aluguel",
-    cat: "Moradia",
-    data: "09/04/2026",
-    valor: -2200,
-    tipo: "saida",
-  },
-  {
-    id: 3,
-    desc: "Freelance",
-    cat: "Renda",
-    data: "08/04/2026",
-    valor: 3200,
-    tipo: "entrada",
-  },
-  {
-    id: 4,
-    desc: "Supermercado",
-    cat: "Alimentação",
-    data: "08/04/2026",
-    valor: -520,
-    tipo: "saida",
-  },
-  {
-    id: 5,
-    desc: "Consulta médica",
-    cat: "Saúde",
-    data: "07/04/2026",
-    valor: -380,
-    tipo: "saida",
-  },
-];
+/** Agrupa os extratos em receitas/despesas por mês (últimos 7 meses com dados) */
+function useLineData(extratos: Extrato[]) {
+  return useMemo(() => {
+    const porMes = new Map<string, { receitas: number; despesas: number }>();
+
+    for (const e of extratos) {
+      const chave = e.data_transacao.slice(0, 7); // "YYYY-MM"
+      const atual = porMes.get(chave) ?? { receitas: 0, despesas: 0 };
+      if (e.tipo === "recebimento") atual.receitas += e.valor;
+      else atual.despesas += e.valor;
+      porMes.set(chave, atual);
+    }
+
+    return Array.from(porMes.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-7)
+      .map(([chave, valores]) => {
+        const mesIndex = Number(chave.slice(5, 7)) - 1;
+        return {
+          name: MESES_ABREV[mesIndex] ?? chave,
+          ...valores,
+        };
+      });
+  }, [extratos]);
+}
+
+/** Agrupa as despesas (pagamentos) por categoria */
+function usePieData(extratos: Extrato[]) {
+  return useMemo(() => {
+    const porCategoria = new Map<string, number>();
+
+    for (const e of extratos) {
+      if (e.tipo !== "pagamento") continue;
+      const categoria = e.categoria ?? "outro";
+      porCategoria.set(
+        categoria,
+        (porCategoria.get(categoria) ?? 0) + e.valor
+      );
+    }
+
+    return Array.from(porCategoria.entries())
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, value], index) => ({
+        name,
+        value,
+        color: CORES_CATEGORIA[index % CORES_CATEGORIA.length],
+      }));
+  }, [extratos]);
+}
 
 export default function DashboardFinanceiro() {
-  return (
-    <div className="min-h-screen bg-[#eef4ff] p-8 font-sans text-slate-800">
-      {/* Header */}
-      <header className="flex justify-between items-start mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Gestão Financeira</h1>
-          <p className="text-slate-500 text-sm">
-            Visão geral das suas movimentações
-          </p>
-        </div>
-        <button className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-lg shadow-sm hover:bg-slate-50 transition-all text-sm font-medium">
-          <FileUp size={18} /> Importar Extrato PDF
-        </button>
-      </header>
+  const { extratos, loading } = useExtratos();
 
-      {/* Cards Superiores */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <SummaryCard
-          title="Saldo Total"
-          value="R$ 47.850"
-          trend="+12.5% este mês"
-          icon={<Wallet className="text-slate-600" />}
-        />
-        <SummaryCard
-          title="Receitas"
-          value="R$ 21.200"
-          trend="Abril 2026"
-          icon={<TrendingUp className="text-green-500" />}
-          trendIcon={<ArrowUpCircle size={14} className="text-green-500" />}
-          bgIcon="bg-green-50"
-        />
-        <SummaryCard
-          title="Despesas"
-          value="R$ 10.800"
-          trend="Abril 2026"
-          icon={<TrendingUp className="text-red-500 rotate-180" />}
-          trendIcon={<ArrowDownCircle size={14} className="text-red-500" />}
-          bgIcon="bg-red-50"
-        />
-      </div>
-
-      {/* Seção de Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <h3 className="font-bold mb-1">Tendência Mensal</h3>
-          <p className="text-xs text-slate-400 mb-6">Receitas vs Despesas</p>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={lineData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#f1f5f9"
-                />
-                <XAxis
-                  dataKey="name"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 12, fill: "#94a3b8" }}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 12, fill: "#94a3b8" }}
-                />
-                <Tooltip />
-                <Legend iconType="circle" />
-                <Line
-                  type="monotone"
-                  dataKey="receitas"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="despesas"
-                  stroke="#ef4444"
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <h3 className="font-bold mb-1">Despesas por Categoria</h3>
-          <p className="text-xs text-slate-400 mb-6">Distribuição mensal</p>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend
-                  layout="vertical"
-                  align="right"
-                  verticalAlign="middle"
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabela de Transações */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-50">
-          <h3 className="font-bold">Transações Recentes</h3>
-          <p className="text-xs text-slate-400">Últimas movimentações</p>
-        </div>
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50/50 text-slate-400 text-xs uppercase tracking-wider">
-              <th className="px-6 py-4 font-medium">Descrição</th>
-              <th className="px-6 py-4 font-medium">Categoria</th>
-              <th className="px-6 py-4 font-medium">Data</th>
-              <th className="px-6 py-4 font-medium text-right">Valor</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {transactions.map((t) => (
-              <tr
-                key={t.id}
-                className="hover:bg-slate-50/50 transition-colors text-sm"
-              >
-                <td className="px-6 py-4 font-medium">{t.desc}</td>
-                <td className="px-6 py-4">
-                  <span className="bg-slate-100 px-3 py-1 rounded-full text-[11px] text-slate-600">
-                    {t.cat}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-slate-500">{t.data}</td>
-                <td
-                  className={`px-6 py-4 text-right font-bold ${t.tipo === "entrada" ? "text-green-600" : "text-red-500"}`}
-                >
-                  {t.tipo === "entrada" ? "+" : ""}{" "}
-                  {t.valor.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                  })}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+  const totalRecebimentos = useMemo(
+    () =>
+      extratos
+        .filter((e) => e.tipo === "recebimento")
+        .reduce((acc, e) => acc + e.valor, 0),
+    [extratos]
   );
-}
 
-// Sub-componente para os cards de resumo
-interface SummaryCardProps {
-  title: string;
-  value: string;
-  trend: string;
-  icon: React.ReactNode;
-  trendIcon?: React.ReactNode;
-  bgIcon?: string;
-}
+  const totalPagamentos = useMemo(
+    () =>
+      extratos
+        .filter((e) => e.tipo === "pagamento")
+        .reduce((acc, e) => acc + e.valor, 0),
+    [extratos]
+  );
 
-function SummaryCard({
-  title,
-  value,
-  trend,
-  icon,
-  trendIcon,
-  bgIcon = "bg-slate-100",
-}: SummaryCardProps) {
+  const lineData = useLineData(extratos);
+  const pieData = usePieData(extratos);
+
+  // Extratos já vêm ordenados por data (mais recentes primeiro) do hook
+  const transacoesRecentes = extratos.slice(0, 5);
+
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-start">
-      <div>
-        <p className="text-slate-400 text-sm mb-1">{title}</p>
-        <h2 className="text-2xl font-black mb-1">{value}</h2>
-        <div className="flex items-center gap-1">
-          {trendIcon}
-          <span
-            className={`text-[11px] font-medium ${trend.includes("+") ? "text-green-500" : "text-slate-400"}`}
-          >
-            {trend}
-          </span>
+    <section>
+      <div className="row">
+        <div className="container">
+          <div className="flex flex-col gap-5 mt-14 md:mt-0">
+            {/* Header */}
+            <div className="flex flex-col gap-y-5 md:flex-row items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  Gestão Financeira
+                </h1>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Visão geral das suas movimentações
+                </p>
+              </div>
+              <button className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-lg shadow-sm hover:bg-slate-50 transition-all text-sm font-medium">
+                <FileUp size={18} /> Importar Extrato PDF
+              </button>
+            </div>
+
+            {/* Cards superiores (mesmo componente usado em Extratos) */}
+            <ResumoCards
+              totalRecebimentos={totalRecebimentos}
+              totalPagamentos={totalPagamentos}
+            />
+
+            {loading ? (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-12 text-center">
+                <p className="text-sm text-gray-400">Carregando gráficos...</p>
+              </div>
+            ) : extratos.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-12 text-center">
+                <p className="text-sm text-gray-400">
+                  Nenhuma movimentação encontrada ainda.
+                </p>
+                <p className="text-xs text-gray-300 mt-1">
+                  Adicione uma transação ou importe um extrato para ver os
+                  gráficos.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Seção de Gráficos */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100 min-w-0">
+                    <h3 className="font-bold mb-1">Tendência Mensal</h3>
+                    <p className="text-xs text-slate-400 mb-6">
+                      Receitas vs Despesas
+                    </p>
+                    <div className="h-[240px] sm:h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={lineData}>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke="#f1f5f9"
+                          />
+                          <XAxis
+                            dataKey="name"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 12, fill: "#94a3b8" }}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 12, fill: "#94a3b8" }}
+                            width={48}
+                          />
+                          <Tooltip
+                            formatter={(value) => formatarValor(Number(value ?? 0))}
+                          />
+                          <Legend iconType="circle" />
+                          <Line
+                            type="monotone"
+                            dataKey="receitas"
+                            name="Receitas"
+                            stroke="#10b981"
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="despesas"
+                            name="Despesas"
+                            stroke="#ef4444"
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100 min-w-0">
+                    <h3 className="font-bold mb-1">Despesas por Categoria</h3>
+                    <p className="text-xs text-slate-400 mb-6">
+                      Distribuição das despesas
+                    </p>
+                    {pieData.length === 0 ? (
+                      <div className="h-[240px] sm:h-[300px] w-full flex items-center justify-center">
+                        <p className="text-sm text-slate-400">
+                          Nenhuma despesa registrada ainda.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="h-[240px] sm:h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={pieData}
+                              innerRadius={55}
+                              outerRadius={75}
+                              paddingAngle={5}
+                              dataKey="value"
+                            >
+                              {pieData.map((entry, index) => (
+                                <Cell
+                                  key={`cell-${index}`}
+                                  fill={entry.color}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(value) => formatarValor(Number(value ?? 0))}
+                            />
+                            <Legend
+                              layout="horizontal"
+                              align="center"
+                              verticalAlign="bottom"
+                              wrapperStyle={{ fontSize: 12 }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tabela de Transações */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="p-6 border-b border-slate-50">
+                    <h3 className="font-bold">Transações Recentes</h3>
+                    <p className="text-xs text-slate-400">
+                      Últimas movimentações
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/50 text-slate-400 text-xs uppercase tracking-wider">
+                          <th className="px-6 py-4 font-medium">Descrição</th>
+                          <th className="px-6 py-4 font-medium">Categoria</th>
+                          <th className="px-6 py-4 font-medium">Data</th>
+                          <th className="px-6 py-4 font-medium text-right">
+                            Valor
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {transacoesRecentes.map((t) => (
+                          <tr
+                            key={t.id}
+                            className="hover:bg-slate-50/50 transition-colors text-sm"
+                          >
+                            <td className="px-6 py-4 font-medium whitespace-nowrap">
+                              {t.descricao}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="bg-slate-100 px-3 py-1 rounded-full text-[11px] text-slate-600">
+                                {t.categoria ?? "outro"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-slate-500 whitespace-nowrap">
+                              {t.data_transacao.split("-").reverse().join("/")}
+                            </td>
+                            <td
+                              className={`px-6 py-4 text-right font-bold whitespace-nowrap ${
+                                t.tipo === "recebimento"
+                                  ? "text-green-600"
+                                  : "text-red-500"
+                              }`}
+                            >
+                              {t.tipo === "recebimento" ? "+ " : "- "}
+                              {formatarValor(t.valor)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
-      <div className={`p-3 rounded-xl ${bgIcon}`}>{icon}</div>
-    </div>
+    </section>
   );
 }
